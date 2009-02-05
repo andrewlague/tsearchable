@@ -13,7 +13,11 @@ module TSearchable
 
       @indexable_fields = @fields.inject([]) {|a,f| a << "coalesce(#{f.to_s},'')"}.join(' || \' \' || ') if not @fields.nil?
       @suggestable_fields = @suggest if not @suggest.nil?
-
+      
+      named_scope :text_search, lambda { |search_terms|
+        { :conditions => "ts_index @@ to_tsquery(#{self.quote_value(parse(search_terms))})" }
+      }
+      
 #      after_save :update_tsvector_row
       define_method(:per_page) { 30 } unless respond_to?(:per_page)
       include TSearchable::InstanceMethods
@@ -32,29 +36,7 @@ module TSearchable
   end
 
   #  text_searchable :fields => [:title, :body]
-  module SingletonMethods
-    def find_by_text_search(keyword, options = {})
-      
-      unless keyword.blank?
-        query = "#{@vector_name} @@ to_tsquery('#{parse(keyword)}')"
-        if options[:conditions].blank?
-          options[:conditions] = query
-        else
-          options[:conditions] << ("AND " << query)
-        end
-      end
-      
-      options[:page] = nil if not options.key?(:page)
-
-      paginate(options)
-    end
-
-    def count_by_text_search(keyword, options = {})
-      options.reverse_merge!(:select => "count(*)", :limit => "ALL", :order => "1 desc")
-      results = find_by_text_search(keyword, options)
-      results.empty? ? 0 : results.at(0)[:count].to_i
-    end
-    
+  module SingletonMethods    
     def find_by_trgm(keyword, options = {})
       raise ActiveRecord::RecordNotFound, "Couldn't find #{name} without a keyword" if keyword.blank?
       return if @suggestable_fields.empty?
