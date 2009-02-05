@@ -15,7 +15,7 @@ module TSearchable
       @suggestable_fields = @suggest if not @suggest.nil?
       
       named_scope :text_search, lambda { |search_terms|
-        { :conditions => "ts_index @@ to_tsquery(#{self.quote_value(parse(search_terms))})" }
+        { :conditions => "#{@config[:vector_name]} @@ to_tsquery(#{self.quote_value(parse(search_terms))})" }
       }
       
 #      after_save :update_tsvector_row
