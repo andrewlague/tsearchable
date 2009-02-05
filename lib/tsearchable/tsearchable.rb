@@ -34,11 +34,16 @@ module TSearchable
   #  text_searchable :fields => [:title, :body]
   module SingletonMethods
     def find_by_text_search(keyword, options = {})
-      raise ActiveRecord::RecordNotFound, "Couldn't find #{name} without a keyword" if keyword.blank?
       
-      query = "#{@vector_name} @@ to_tsquery('#{parse(keyword)}')"
+      unless keyword.blank?
+        query = "#{@vector_name} @@ to_tsquery('#{parse(keyword)}')"
+        if options[:conditions].blank?
+          options[:conditions] = query
+        else
+          options[:conditions] << ("AND " << query)
+        end
+      end
       
-      options[:conditions] ? (options[:conditions] << ("AND " << query)) : (options[:conditions] = query)
       options[:page] = nil if not options.key?(:page)
 
       paginate(options)
