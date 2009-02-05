@@ -13,7 +13,7 @@ namespace :tsearchable do
           puts "Creating ts_vector for model: #{vector}"
 	  vector.constantize.create_tsvector
 	rescue
-	  puts "Unknown model: cannot create ts_vector column"
+	  puts "Unknown model: cannot create ts_vector column. Be sure to use the class name of the model eg. 'NewsItem'"
 	end
       end
     end
@@ -32,7 +32,7 @@ namespace :tsearchable do
           Rake::Task['tsearchable:vectors:create'].invoke(vector)
 	  vector.constantize.create_trigger
 	rescue
-	  puts "Unknown model: cannot create ts_vector column"
+	  puts "Unknown model: cannot create ts_vector column. Be sure to use the class name of the model eg. 'NewsItem'"
 	end
       end
     end

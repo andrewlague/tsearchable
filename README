@@ -29,8 +29,8 @@ Usage
     ... tsearchable :fields => [:name, :description]
 
   - create tsvector index and trigger using rake task
-    ... rake tsearchable:vectors:create VECTOR=name_of_the_model
-    ... rake tsearchable:triggers:create VECTOR=name_of_the_model
+    ... rake tsearchable:vectors:create VECTOR=NameOfActiveRecordModel
+    ... rake tsearchable:triggers:create VECTOR=NameOfActiveRecordModel
 
   - YourModel.find_by_text_search("moose OR mousse")
     ... returns result set.  supports most googlish ands and ors and double quoting
