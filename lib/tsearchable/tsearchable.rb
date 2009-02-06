@@ -14,6 +14,8 @@ module TSearchable
       @indexable_fields = @fields.inject([]) {|a,f| a << "coalesce(#{f.to_s},'')"}.join(' || \' \' || ') if not @fields.nil?
       @suggestable_fields = @suggest if not @suggest.nil?
       
+      create_trigger
+      
       named_scope :text_search, lambda { |search_terms|
         { :conditions => "#{@config[:vector_name]} @@ to_tsquery(#{self.quote_value(parse(search_terms))})" }
       }
@@ -95,6 +97,8 @@ module TSearchable
 
       sql << "CREATE TRIGGER tsvectorupdate_#{table_name}_#{@vector_name} BEFORE INSERT OR UPDATE ON #{table_name} FOR EACH ROW EXECUTE PROCEDURE tsvector_update_trigger(#{@vector_name}, '#{@catalog}', " << @fields.join(' ,') << ')'
       execute_query(sql)
+    rescue ActiveRecord::StatementInvalid => error
+      raise error unless /already exists/.match error
     end
 
     # googly search terms to tsearch format.  jacked from bens acts_as_tsearch.
