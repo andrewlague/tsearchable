@@ -1,4 +1,8 @@
-module TextSearchHelper
+module TsearchableHelper
+  class Article < ActiveRecord::Base
+    tsearchable :fields => [:title, :body], :vector_name => 'vectors'
+  end
+  
   def self.create_moose_article
     title = "chocolate pudding is good, but mousse is better"
     body  = <<-EOS
