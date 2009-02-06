@@ -99,14 +99,16 @@ module TSearchable
 
     # googly search terms to tsearch format.  jacked from bens acts_as_tsearch.
     def parse(query)
-      query = query.gsub(/[^\w\-\+'"]+/, " ").gsub("'", "''").strip.downcase
-      query = query.scan(/(\+|or \-?|and \-?|\-)?("[^"]*"?|[\w\-]+)/).collect do |prefix, term|
-        term = "(#{term.scan(/[\w']+/).join('&')})" if term[0,1] == '"'
-        term = "!#{term}" if prefix =~ /\-/
-        [(prefix =~ /or/) ? '|' : '&', term] 
-      end.flatten!
-      query.shift
-      query.join
+      unless query.blank?
+        query = query.gsub(/[^\w\-\+'"]+/, " ").gsub("'", "''").strip.downcase
+        query = query.scan(/(\+|or \-?|and \-?|\-)?("[^"]*"?|[\w\-]+)/).collect do |prefix, term|
+          term = "(#{term.scan(/[\w']+/).join('&')})" if term[0,1] == '"'
+          term = "!#{term}" if prefix =~ /\-/
+          [(prefix =~ /or/) ? '|' : '&', term] 
+        end.flatten!
+        query.shift
+        query.join
+      end
     end
     
     def clean(query)
