@@ -6,23 +6,26 @@ module TSearchable
 
   module ClassMethods
     def tsearchable(options = {})
-      @config = {:index => 'gist', :vector_name => 'ts_index', :catalog => 'pg_catalog.english' }
-      @config.update(options) if options.is_a?(Hash)
-      @config.each {|k,v| instance_variable_set(:"@#{k}", v)}
-      raise "You must explicitly specify which fields you want to be searchable" unless @fields or @suggest
+      @text_search_config = {:index => 'gist', :vector_name => 'ts_index', :catalog => 'pg_catalog.english' }
+      @text_search_config.update(options) if options.is_a?(Hash)
+      
+      unless @text_search_config[:fields] || @text_search_config[:suggest]
+        raise "You must explicitly specify which fields you want to be searchable"
+      end
 
-      @indexable_fields = @fields.inject([]) {|a,f| a << "coalesce(#{f.to_s},'')"}.join(' || \' \' || ') if not @fields.nil?
+      @text_search_indexable_fields = @text_search_config[:fields].inject([]) { |a,f| 
+        a << "coalesce(#{f.to_s},'')" }.join(' || \' \' || ') if not @text_search_config[:fields].nil?
       @suggestable_fields = @suggest if not @suggest.nil?
       
-      create_trigger
-      create_tsvector
+      create_tsvector_column
+      update_tsvector_column
+      create_tsvector_update_trigger
       
       named_scope :text_search, lambda { |search_terms|
-        { :conditions => "#{@config[:vector_name]} @@ to_tsquery(#{self.quote_value(parse(search_terms))})" }
+        { :conditions => "#{@text_search_config[:vector_name]} @@ to_tsquery(#{self.quote_value(parse(search_terms))})" }
       }
       
-#      after_save :update_tsvector_row
-      define_method(:per_page) { 30 } unless respond_to?(:per_page)
+      # define_method(:per_page) { 30 } unless respond_to?(:per_page)
       include TSearchable::InstanceMethods
     end
 
@@ -33,8 +36,8 @@ module TSearchable
   end
 
   module InstanceMethods
-    def update_tsvector_row
-      self.class.update_tsvector(self.id)
+    def update_tsvector
+      self.class.update_tsvector_column(self.id)
     end
   end
 
@@ -47,7 +50,7 @@ module TSearchable
       query = []
       sel = []
       @suggestable_fields.each do |field|
-        query  << "#{field} % '#{clean(keyword)}'"
+        query  << "#{field} % '#{self.quote_value(keyword)}'"
         sel << "similarity(#{field}, '#{clean(keyword)}') AS sml_#{field}"
       end
       query = query.join(" AND ")
@@ -59,46 +62,56 @@ module TSearchable
       
       paginate(options)
     end
+    
 
-    def update_tsvector(rowid = nil)
-      create_tsvector unless column_names.include?(@vector_name)
-      # added unindexable hook
-      if respond_to?(:is_indexable) && !is_indexable?
-        return update_all({:vector_name => nil}, {:id => id})
-      end
+    def update_tsvector_column(rowid = nil)
+      create_tsvector unless column_names.include?(@text_search_config[:vector_name])
+      sql = "UPDATE  #{table_name} SET #{@text_search_config[:vector_name]} = to_tsvector(#{@text_search_indexable_fields})"
       if rowid
-        connection.execute "UPDATE #{table_name} SET #{@vector_name} = to_tsvector(#{@indexable_fields}) WHERE #{table_name}.id = #{rowid}"
+        sql << " WHERE #{table_name}.id = #{rowid}"
       end
-    end
-    alias_method :update_vector, :update_tsvector
+      connection.execute sql
+    end    
 
     # creates the tsvector column and the index
-    def create_tsvector(sql = [])
-      return if column_names.include?(@vector_name)
-      connection.execute "ALTER TABLE #{table_name} ADD COLUMN #{@vector_name} tsvector"
-      connection.execute "CREATE INDEX #{table_name}_ts_idx ON #{table_name} USING #{@index}(#{@vector_name})"
+    def create_tsvector_column
+      return if column_names.include?(@text_search_config[:vector_name])
+      connection.execute "ALTER TABLE #{table_name} ADD COLUMN 
+            #{@text_search_config[:vector_name]} tsvector"
+      connection.execute "CREATE INDEX #{table_name}_ts_idx ON #{table_name} USING 
+            #{@text_search_config[:index]}(#{@text_search_config[:vector_name]})"
       reset_column_information
     end
-    alias_method :create_vector, :create_tsvector
+    
     
     # creates the trigram index
-    def create_trgm(sql = [])
-      return if column_names.include?(@vector_name)
+    def create_trgm_index
+      return if column_names.include?(@text_search_config[:vector_name])
       
       @suggestable_fields.each do |field|
-        connection.execute "CREATE INDEX index_#{table_name}_#{field}_trgm ON #{table_name} USING gist(#{field} gist_trgm_ops)"
+        connection.execute "CREATE INDEX index_#{table_name}_#{field}_trgm ON 
+                            #{table_name} USING gist(#{field} gist_trgm_ops)"
       end
     end
+    
 
     # creates the trigger to auto-update vector column
-    def create_trigger(sql = "")
-      create_tsvector(sql)
+    def create_tsvector_update_trigger
+      create_tsvector_column
 
-      connection.execute "CREATE TRIGGER tsvectorupdate_#{table_name}_#{@vector_name} BEFORE INSERT OR UPDATE ON #{table_name} FOR EACH ROW EXECUTE PROCEDURE tsvector_update_trigger(#{@vector_name}, '#{@catalog}', " << @fields.join(' ,') << ')'
+      sql = "CREATE TRIGGER tsvectorupdate_#{table_name}_#{@text_search_config[:vector_name]} 
+          BEFORE INSERT OR UPDATE ON #{table_name} FOR EACH ROW EXECUTE PROCEDURE 
+          tsvector_update_trigger(#{@text_search_config[:vector_name]}, '#{@text_search_config[:catalog]}', " 
+      sql << @text_search_config[:fields].join(' ,') << ')'
+      connection.execute sql
+      
     rescue ActiveRecord::StatementInvalid => error
       raise error unless /already exists/.match error
     end
 
+
+    private
+    
     # googly search terms to tsearch format.  jacked from bens acts_as_tsearch.
     def parse(query)
       unless query.blank?
@@ -111,14 +124,6 @@ module TSearchable
         query.shift
         query.join
       end
-    end
-    
-    def clean(query)
-      query
-    end
-
-    def count_all_indexable
-      count(:conditions => {:is_indexable => true})
     end
 
   end

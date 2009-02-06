@@ -37,7 +37,6 @@ class TsearchableTest < Test::Unit::TestCase
 
   ## testing parameter parsing
   def test_should_allow_OR_searches
-    Article.update_vector
     assert_equal 2, Article.text_search("moose OR woodchuck").count
   end
 
