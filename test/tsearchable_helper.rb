@@ -1,6 +1,8 @@
 module TsearchableHelper
   class Article < ActiveRecord::Base
-    tsearchable :fields => [:title, :body], :vector_name => 'vectors'
+    tsearchable :fields        =>   [ :title, :body ], 
+                :vector_name   =>   'vectors', 
+                :suggest       =>   [ :title ]
   end
   
   def self.create_moose_article

@@ -15,17 +15,39 @@ module TSearchable
 
       @text_search_indexable_fields = @text_search_config[:fields].inject([]) { |a,f| 
         a << "coalesce(#{f.to_s},'')" }.join(' || \' \' || ') if not @text_search_config[:fields].nil?
-      @suggestable_fields = @suggest if not @suggest.nil?
       
       create_tsvector_column
       update_tsvector_column
       create_tsvector_update_trigger
+      create_trgm_indexes
       
       named_scope :text_search, lambda { |search_terms|
+        return {} if search_terms.blank?
         { :conditions => "#{@text_search_config[:vector_name]} @@ to_tsquery(#{self.quote_value(parse(search_terms))})" }
       }
+
+      named_scope :phrase_search, lambda { |phrase|
+        returning options = {} do
+          return options if phrase.blank?
+          return options if @text_search_config[:suggest].empty?
+
+          connection.execute 'SELECT set_limit(0.1)'
+
+          query = []
+          sel = []
+          @text_search_config[:suggest].each do |field|
+            query  << "#{field} % #{self.quote_value(phrase)}"
+            sel << "similarity(#{field}, #{self.quote_value(phrase)}) AS sml_#{field}"
+            options[:order] = "sml_#{field} DESC"
+          end
+          query = query.join(" AND ")
+          sel = sel.join(", ")
+
+          options[:conditions] ? (options[:conditions] << ("AND " << query)) : (options[:conditions] = query)
+          options[:select] = "*, " << sel
+        end
+      }
       
-      # define_method(:per_page) { 30 } unless respond_to?(:per_page)
       include TSearchable::InstanceMethods
     end
 
@@ -43,30 +65,10 @@ module TSearchable
 
   #  text_searchable :fields => [:title, :body]
   module SingletonMethods    
-    def find_by_trgm(keyword, options = {})
-      raise ActiveRecord::RecordNotFound, "Couldn't find #{name} without a keyword" if keyword.blank?
-      return if @suggestable_fields.empty?
-
-      query = []
-      sel = []
-      @suggestable_fields.each do |field|
-        query  << "#{field} % '#{self.quote_value(keyword)}'"
-        sel << "similarity(#{field}, '#{clean(keyword)}') AS sml_#{field}"
-      end
-      query = query.join(" AND ")
-      sel = sel.join(", ")
-      
-      options[:conditions] ? (options[:conditions] << ("AND " << query)) : (options[:conditions] = query)
-      options[:select] = "*, " << sel
-      options[:page] = nil if not options.key?(:page)
-      
-      paginate(options)
-    end
-    
-
     def update_tsvector_column(rowid = nil)
       create_tsvector unless column_names.include?(@text_search_config[:vector_name])
-      sql = "UPDATE  #{table_name} SET #{@text_search_config[:vector_name]} = to_tsvector(#{@text_search_indexable_fields})"
+      sql = "UPDATE #{table_name} SET #{@text_search_config[:vector_name]} = 
+             to_tsvector(#{@text_search_indexable_fields})"
       if rowid
         sql << " WHERE #{table_name}.id = #{rowid}"
       end
@@ -84,14 +86,19 @@ module TSearchable
     end
     
     
-    # creates the trigram index
-    def create_trgm_index
-      return if column_names.include?(@text_search_config[:vector_name])
-      
-      @suggestable_fields.each do |field|
-        connection.execute "CREATE INDEX index_#{table_name}_#{field}_trgm ON 
-                            #{table_name} USING gist(#{field} gist_trgm_ops)"
-      end
+    # creates the trigram indexes
+    def create_trgm_indexes
+      @text_search_config[:suggest].each do |field|
+        create_trgm_index(field)
+      end unless @text_search_config[:suggest].blank?
+    end
+    
+
+    def create_trgm_index(field)
+      connection.execute "CREATE INDEX index_#{table_name}_#{field}_trgm ON 
+                          #{table_name} USING gin (#{field} gin_trgm_ops)"
+    rescue ActiveRecord::StatementInvalid => error
+      raise error unless /already exists/.match error
     end
     
 
@@ -102,7 +109,7 @@ module TSearchable
       sql = "CREATE TRIGGER tsvectorupdate_#{table_name}_#{@text_search_config[:vector_name]} 
           BEFORE INSERT OR UPDATE ON #{table_name} FOR EACH ROW EXECUTE PROCEDURE 
           tsvector_update_trigger(#{@text_search_config[:vector_name]}, '#{@text_search_config[:catalog]}', " 
-      sql << @text_search_config[:fields].join(' ,') << ')'
+      sql << @text_search_config[:fields].join(', ') << ')'
       connection.execute sql
       
     rescue ActiveRecord::StatementInvalid => error

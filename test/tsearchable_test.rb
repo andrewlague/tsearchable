@@ -51,4 +51,8 @@ class TsearchableTest < Test::Unit::TestCase
   def test_should_allow_PLUS_searches
     assert_equal 1, Article.text_search("moose +mousse").count
   end
+  
+  def test_trgm_phrase_search
+    assert_equal @moose.id, Article.phrase_search('moose mousse').first.id
+  end
 end
