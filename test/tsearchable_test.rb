@@ -55,4 +55,8 @@ class TsearchableTest < Test::Unit::TestCase
   def test_trgm_phrase_search
     assert_equal @moose.id, Article.phrase_search('moose mousse').first.id
   end
+  
+  def test_trgm_phrase_search_nonexistant_entry
+    assert_equal 0, Article.phrase_search("blah 98248934894389 blah").count
+  end
 end
