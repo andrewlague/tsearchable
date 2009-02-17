@@ -1,10 +1,4 @@
-jdbcpostgresql:
-  adapter: jdbcpostgresql
-  host: localhost
-  username: arlague
-  database: tsearchable_test
-  
-postgresql:
+db:
   adapter: postgresql
   host: localhost
   username: arlague

@@ -51,24 +51,42 @@ module TSearchable
       include TSearchable::InstanceMethods
     end
 
+ 
     private
-      def coalesce(table, field)
-        "coalesce(#{table}z.#{field},'')"
-      end
-  end
-
-  module InstanceMethods
-    def update_tsvector
-      self.class.update_tsvector_column(self.id)
+ 
+    def coalesce(table, field)
+      "coalesce(#{table}z.#{field},'')"
     end
   end
 
-  #  text_searchable :fields => [:title, :body]
+
+
+  module InstanceMethods
+    def self.included(base)
+      base.class_eval do
+        def self.text_search_config
+          @text_search_config.clone
+        end
+        after_save :update_tsvector
+      end
+    end
+    
+    def update_tsvector
+      include_text = ""
+      unless self.class.text_search_config[:include].nil?
+        include_text = eval(self.class.text_search_config[:include])
+      end
+      self.class.update_tsvector_column(self.id, include_text)
+    end
+  end
+
+
   module SingletonMethods    
-    def update_tsvector_column(rowid = nil)
+    def update_tsvector_column(rowid = nil, include_text = "")
       create_tsvector unless column_names.include?(@text_search_config[:vector_name])
+      
       sql = "UPDATE #{table_name} SET #{@text_search_config[:vector_name]} = 
-             to_tsvector(#{@text_search_indexable_fields})"
+             to_tsvector(#{@text_search_indexable_fields} || ' ' || #{quote_value include_text})"
       if rowid
         sql << " WHERE #{table_name}.id = #{rowid}"
       end
@@ -104,16 +122,16 @@ module TSearchable
 
     # creates the trigger to auto-update vector column
     def create_tsvector_update_trigger
-      create_tsvector_column
-
-      sql = "CREATE TRIGGER tsvectorupdate_#{table_name}_#{@text_search_config[:vector_name]} 
-          BEFORE INSERT OR UPDATE ON #{table_name} FOR EACH ROW EXECUTE PROCEDURE 
-          tsvector_update_trigger(#{@text_search_config[:vector_name]}, '#{@text_search_config[:catalog]}', " 
-      sql << @text_search_config[:fields].join(', ') << ')'
-      connection.execute sql
-      
-    rescue ActiveRecord::StatementInvalid => error
-      raise error unless /already exists/.match error
+    #   create_tsvector_column
+    # 
+    #   sql = "CREATE TRIGGER tsvectorupdate_#{table_name}_#{@text_search_config[:vector_name]} 
+    #       BEFORE INSERT OR UPDATE ON #{table_name} FOR EACH ROW EXECUTE PROCEDURE 
+    #       tsvector_update_trigger(#{@text_search_config[:vector_name]}, '#{@text_search_config[:catalog]}', " 
+    #   sql << @text_search_config[:fields].join(', ') << ')'
+    #   connection.execute sql
+    #   
+    # rescue ActiveRecord::StatementInvalid => error
+    #   raise error unless /already exists/.match error
     end
 
 

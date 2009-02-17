@@ -1,10 +1,17 @@
-module TsearchableHelper
-  class Article < ActiveRecord::Base
-    tsearchable :fields        =>   [ :title, :body ], 
-                :vector_name   =>   'vectors', 
-                :suggest       =>   [ :title ]
-  end
+class Tag < ActiveRecord::Base
+  belongs_to :taggable, :polymorphic => true
+end
+
+class Article < ActiveRecord::Base
+  has_many :tags, :as => :taggable
   
+  tsearchable :fields        => [ :title, :body ], 
+              :vector_name   => 'vectors', 
+              :suggest       => [ :title ],
+              :include       => "tags.all.map(&:name).join(' ')"
+end
+
+module TsearchableHelper
   def self.create_moose_article
     title = "chocolate pudding is good, but mousse is better"
     body  = <<-EOS
@@ -24,5 +31,12 @@ module TsearchableHelper
       a woodchuck could chuck as much wood as a woodchuck could chuck if a woodchuck could chuck wood
     EOS
     Article.create({:title => title, :body => body})
+  end
+  
+  def self.create_tagged_article
+    article = Article.create :title => "an article with tags", :body  => "blah blah zeitgeist world"
+    article.tags.create(:name => 'crazy')
+    article.tags.create(:name => 'wonderful')
+    article.reload
   end
 end

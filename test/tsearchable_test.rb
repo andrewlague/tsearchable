@@ -9,6 +9,7 @@ class TsearchableTest < Test::Unit::TestCase
   def setup
     @moose     = TsearchableHelper.create_moose_article
     @woodchuck = TsearchableHelper.create_woodchuck_article
+    @tagged    = TsearchableHelper.create_tagged_article
   end
 
   def teardown
@@ -58,5 +59,30 @@ class TsearchableTest < Test::Unit::TestCase
   
   def test_trgm_phrase_search_nonexistant_entry
     assert_equal 0, Article.phrase_search("blah 98248934894389 blah").count
+  end
+  
+  def test_tags_are_getting_associated
+    assert_equal 2, @tagged.tags.count
+  end
+  
+  def test_update_tsvector_column_class_method
+    Article.update_tsvector_column(@tagged.id, 'database')
+    assert_equal 1, Article.text_search('database').count
+  end
+  
+  # tests for computed fields
+  def test_class_variable_is_set_properly
+    assert_equal "tags.all.map(&:name).join(' ')", Article.text_search_config[:include]
+  end
+  
+  def test_class_method_should_allow_a_proc_to_include_computed_fields
+    article = Article.create(:title => 'hello')
+    assert article.save
+    tag = Tag.create(:name => 'crazy')
+    assert tag.save
+    article.tags << tag
+    assert article.save
+    assert article.tags.map(&:id).include?(tag.id)
+    assert_equal article.id, Article.text_search("crazy").first.id
   end
 end
