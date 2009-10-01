@@ -63,12 +63,7 @@ class TsearchableTest < Test::Unit::TestCase
   
   def test_tags_are_getting_associated
     assert_equal 2, @tagged.tags.count
-  end
-  
-  def test_update_tsvector_column_class_method
-    Article.update_tsvector_column(@tagged.id, 'database')
-    assert_equal 1, Article.text_search('database').count
-  end
+  end 
   
   # tests for computed fields
   def test_class_variable_is_set_properly
@@ -83,6 +78,17 @@ class TsearchableTest < Test::Unit::TestCase
     article.tags << tag
     assert article.save
     assert article.tags.map(&:id).include?(tag.id)
-    assert_equal article.id, Article.text_search("crazy").first.id
+    article.reload
+    assert_match /craz/, article.vectors
+  end
+  
+  def test_computed_fields_should_be_updated_when_model_is_saved_with_update_attributes
+    article = Article.create(:title => 'hello')
+    tag = Tag.create(:name => 'somelongword')
+    article.tags << tag
+    article.update_attributes(:title => 'new title')
+    search = Article.text_search('somelongword')
+    assert search.nitems == 1
+    assert_equal article.id, search.first.id
   end
 end
