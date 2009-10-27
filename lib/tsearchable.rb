@@ -23,7 +23,12 @@ module TSearchable
       
       named_scope :text_search, lambda { |search_terms|
         return {} if search_terms.blank?
-        { :conditions => "#{@text_search_config[:vector_name]} @@ to_tsquery(#{self.quote_value(parse(search_terms))})" }
+        query = self.quote_value(parse(search_terms))
+        {
+                :select => self.table_name + ".*, ts_rank(#{@text_search_config[:vector_name]}, to_tsquery(#{query})) AS ts_rank", 
+                :conditions => "#{@text_search_config[:vector_name]} @@ to_tsquery(#{query})",
+                :order => "ts_rank DESC"
+        }
       }
 
       named_scope :phrase_search, lambda { |phrase|
