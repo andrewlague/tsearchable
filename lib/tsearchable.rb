@@ -93,7 +93,7 @@ module TSearchable
       query = connection.quote(self.class.text_search_parse(terms))
       result = connection.execute "SELECT ts_rank(#{self.class.text_search_config[:vector_name]}, to_tsquery(#{query})) AS ts_rank 
                                    FROM #{self.class.table_name} WHERE id = #{id}"
-      result[0]['ts_rank']
+      result[0]['ts_rank'] rescue result[0]
     end
   end
 
