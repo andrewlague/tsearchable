@@ -23,7 +23,7 @@ module TSearchable
       
       named_scope :text_search, lambda { |search_terms|
         return {} if search_terms.blank?
-        query = self.quote_value(parse(search_terms))
+        query = self.quote_value(text_search_parse(search_terms))
         {
                 :select => self.table_name + ".*, ts_rank(#{@text_search_config[:vector_name]}, to_tsquery(#{query})) AS ts_rank", 
                 :conditions => "#{@text_search_config[:vector_name]} @@ to_tsquery(#{query})",
@@ -88,6 +88,13 @@ module TSearchable
              WHERE #{self.class.table_name}.id = #{self.id}"
       connection.execute sql
     end
+
+    def text_search_score(terms)
+      query = connection.quote(self.class.text_search_parse(terms))
+      result = connection.execute "SELECT ts_rank(#{self.class.text_search_config[:vector_name]}, to_tsquery(#{query})) AS ts_rank 
+                                   FROM #{self.class.table_name} WHERE id = #{id}"
+      result[0]['ts_rank']
+    end
   end
 
 
@@ -126,10 +133,8 @@ module TSearchable
     end
 
 
-    private
-    
     # googly search terms to tsearch format.  jacked from bens acts_as_tsearch.
-    def parse(query)
+    def text_search_parse(query)
       unless query.blank?
         query = query.gsub(/[^\w\-\+'"]+/, " ").gsub("'", "''").strip.downcase
         query = query.scan(/(\+|or \-?|and \-?|\-)?("[^"]*"?|[\w\-]+)/).collect do |prefix, term|
